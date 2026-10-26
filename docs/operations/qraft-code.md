@@ -9,8 +9,11 @@ Install dependencies with `vp i`, using the Node and pnpm versions pinned in the
 The macOS resource monitor requires Rust 1.95 or newer and the Xcode Command Line Tools.
 
 ```sh
-RUSTUP_TOOLCHAIN=1.95.0 vp run dist:desktop:dmg:arm64 --build-version 0.1.2-qraft.1
+DEVELOPER_DIR=/Library/Developer/CommandLineTools RUSTUP_TOOLCHAIN=1.95.0 vp run dist:desktop:dmg:arm64 --build-version 0.1.2-qraft.1
 ```
+
+Use a compiler and SDK from the same developer directory. The command above selects the standalone
+Command Line Tools without changing the system-wide Xcode selection.
 
 The build writes a DMG and ZIP to `release/`. Local builds are not notarized; signing and a
 published update release must be configured before automatic distribution is ready.
