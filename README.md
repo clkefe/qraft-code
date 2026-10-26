@@ -1,4 +1,11 @@
-# T3 Code
+# Qraft Code
+
+A personal coding-agent workspace based on [T3 Code](https://github.com/pingdotgg/t3code).
+Fork build and upstream-update instructions: [Qraft Code operations](docs/operations/qraft-code.md).
+
+The original upstream overview follows.
+
+## T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
