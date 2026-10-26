@@ -15,7 +15,7 @@ DEVELOPER_DIR=/Library/Developer/CommandLineTools RUSTUP_TOOLCHAIN=1.95.0 vp run
 Use a compiler and SDK from the same developer directory. The command above selects the standalone
 Command Line Tools without changing the system-wide Xcode selection.
 
-The build writes a DMG and ZIP to `release/`. Local builds are not notarized; signing and a
+The build writes a DMG and ZIP to `release/`. Local builds use ad-hoc signing and are not notarized; Developer ID signing and a
 published update release must be configured before automatic distribution is ready.
 Both the desktop feed and CLI release URLs default to `clkefe/qraft-code`.
 `QRAFTCODE_DESKTOP_UPDATE_REPOSITORY` can override the desktop feed explicitly.

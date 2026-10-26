@@ -506,6 +506,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.isNull(preview.publish);
       assert.isNull(previewChannel.publish);
+      assert.equal((release.mac as { identity: string }).identity, "-");
       assert.deepStrictEqual(release.publish, [
         {
           provider: "github",
