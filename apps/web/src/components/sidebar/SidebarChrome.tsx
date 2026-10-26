@@ -117,7 +117,6 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
-      <img src="/qraft-icon.png" alt="" className="h-5 w-5 shrink-0 rounded" />
       <span>Qraft</span>
       <span
         className={cn(
