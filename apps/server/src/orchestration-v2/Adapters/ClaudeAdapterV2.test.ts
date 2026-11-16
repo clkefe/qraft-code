@@ -3528,11 +3528,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* start("/unrestricted");
         assert.equal(harness.getOpenedOptions()?.permissionMode, "bypassPermissions");
         assert.equal(harness.getOpenedOptions()?.allowDangerouslySkipPermissions, true);
-        // Forwarded asks (including ask rules and settings fallback) still need a decision
-        // before queued init/status frames arrive.
-        for (const { phase, frame } of [
+        // A forwarded ask before the CLI confirms bypass may be a settings fallback, and so is
+        // every ask after the CLI reports a downgrade.
+        for (const { phase, frame, frameFirst } of [
           {
             phase: "init",
+            frameFirst: false,
             frame: claudeSdkFrame({
               type: "system",
               subtype: "init",
@@ -3543,6 +3544,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           },
           {
             phase: "status",
+            frameFirst: true,
             frame: claudeSdkFrame({
               type: "system",
               subtype: "status",
@@ -3553,14 +3555,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             }),
           },
         ]) {
+          if (frameFirst) yield* harness.offerAndWait(frame);
           const forwardedDecision = yield* Effect.promise(() =>
             harness.getOpenedOptions()!.canUseTool!(
               "Bash",
               { command: "git status" },
               {
                 signal: new AbortController().signal,
-                toolUseID: `forwarded-before-${phase}`,
-                requestId: `request-forwarded-before-${phase}`,
+                toolUseID: `forwarded-${phase}`,
+                requestId: `request-forwarded-${phase}`,
               },
             ),
           ).pipe(Effect.forkScoped);
@@ -3575,7 +3578,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           assert.equal(
             forwardedFirst.type,
             "request",
-            `CLI-forwarded Bash must ask before the queued ${phase} frame reaches the adapter`,
+            `CLI-forwarded Bash must ask around the ${phase} frame`,
           );
           if (forwardedFirst.type !== "request") return;
           assert.equal(forwardedFirst.event.runtimeRequest.kind, "command");
@@ -3584,7 +3587,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             decision: "decline",
           });
           assert.equal((yield* Fiber.join(forwardedDecision))?.behavior, "deny");
-          yield* harness.offerAndWait(frame);
+          if (!frameFirst) yield* harness.offerAndWait(frame);
         }
         yield* finish;
         const unrestrictedOptions = harness.getOpenedOptions();
@@ -4087,6 +4090,105 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         const event = yield* Queue.take(turn.planReceipts);
         assert.equal(event.plan.kind, "proposed_plan");
         assert.equal(event.plan.kind === "proposed_plan" ? event.plan.markdown : "", markdown);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    );
+  });
+
+  describe("Full access asks", () => {
+    const requestFullAccessCommand = Effect.fn("requestFullAccessCommand")(function* (options: {
+      confirmedBypass: boolean;
+      matchedAskRule?: { source: "userSettings"; toolName: string; ruleContent: string };
+    }) {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-claude-full-access-ask"),
+          text: "Clean up.",
+          attachments: [],
+        }),
+      );
+      assert.equal(harness.getOpenedOptions()?.permissionMode, "bypassPermissions");
+      if (options.confirmedBypass) {
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "init",
+            permissionMode: "bypassPermissions",
+            uuid: "full-access-init",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      }
+      const toolInput = { command: 'rm -f "$R"/*.webm' };
+      const decision = yield* Effect.promise(() =>
+        harness.getOpenedOptions()!.canUseTool!("Bash", toolInput, {
+          signal: new AbortController().signal,
+          toolUseID: "tool-full-access-rm",
+          requestId: "request-full-access-rm",
+          decisionReason: "Dangerous rm operation on possibly-empty variable path",
+          ...(options.matchedAskRule === undefined
+            ? {}
+            : { matchedAskRule: options.matchedAskRule }),
+        }),
+      ).pipe(Effect.forkScoped);
+      const first = yield* Effect.raceFirst(
+        Queue.take(harness.runtimeRequestReceipts).pipe(
+          Effect.map((event) => ({ type: "request", event }) as const),
+        ),
+        Fiber.join(decision).pipe(Effect.map((result) => ({ type: "decision", result }) as const)),
+      );
+      return { harness, toolInput, first, decision };
+    });
+
+    it.effect("approves Claude's own safety checks once the CLI confirms bypass", () =>
+      Effect.gen(function* () {
+        const { toolInput, first } = yield* requestFullAccessCommand({ confirmedBypass: true });
+        assert.equal(first.type, "decision", "Full access raised a provider safety-check prompt");
+        if (first.type !== "decision") return;
+        assert.equal(first.result?.behavior, "allow");
+        if (first.result?.behavior === "allow")
+          assert.deepEqual(first.result.updatedInput, toolInput);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    );
+
+    it.effect.each([
+      { name: "the user's ask rule matched", confirmedBypass: true, askRule: true },
+      { name: "the CLI has not confirmed bypass", confirmedBypass: false, askRule: false },
+    ])("still asks when $name", ({ confirmedBypass, askRule }) =>
+      Effect.gen(function* () {
+        const { harness, first, decision } = yield* requestFullAccessCommand({
+          confirmedBypass,
+          ...(askRule
+            ? {
+                matchedAskRule: {
+                  source: "userSettings",
+                  toolName: "Bash",
+                  ruleContent: "rm:*",
+                },
+              }
+            : {}),
+        });
+        assert.equal(first.type, "request", "Full access skipped a required approval");
+        if (first.type !== "request") return;
+        assert.equal(first.event.runtimeRequest.kind, "command");
+        yield* harness.runtime.respondToRuntimeRequest({
+          requestId: first.event.runtimeRequest.id,
+          decision: "decline",
+        });
+        assert.equal((yield* Fiber.join(decision))?.behavior, "deny");
       }).pipe(
         Effect.scoped,
         Effect.provide(

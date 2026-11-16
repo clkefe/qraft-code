@@ -2607,11 +2607,21 @@ function claudeBypassAvailability(
   };
 }
 
-function requiresClaudeApproval(context: ActiveClaudeTurnContext): boolean {
-  // CLI-forwarded requests need a person's decision even under bypass (ask rules,
-  // safety checks, or settings fallback). Do not wait for queued init/status updates.
+function requiresClaudeApproval(
+  context: ActiveClaudeTurnContext,
+  callbackOptions: Pick<Parameters<CanUseTool>[2], "matchedAskRule">,
+  liveQuery: ClaudeLiveQueryContext | null,
+): boolean {
   const policy = context.queryPolicy;
-  return policy.installPermissionCallback || policy.permissionMode === "bypassPermissions";
+  if (policy.installPermissionCallback) return true;
+  if (policy.permissionMode !== "bypassPermissions") return false;
+  // Full access approves the CLI's own safety checks, but only once the CLI has confirmed bypass:
+  // before that a forwarded ask may be a settings fallback. The user's ask rules always ask.
+  return (
+    callbackOptions.matchedAskRule !== undefined ||
+    liveQuery?.receivedInit !== true ||
+    liveQuery.permissionMode !== "bypassPermissions"
+  );
 }
 
 function claudeRuntimeQueryPolicyKey(policy: ClaudeRuntimeQueryPolicy): string {
@@ -9355,6 +9365,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             } satisfies PermissionResult;
           }
 
+          const needsApproval = requiresClaudeApproval(
+            context,
+            callbackOptions,
+            yield* Ref.get(queryContext),
+          );
           const nativeRequestId = callbackOptions.toolUseID;
           const nativeToolInput = claudeNativeToolInputFromRecord(toolInput);
           const heldForEcho = context.heldRootFrames.length > 0;
@@ -9380,7 +9395,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (
             heldForEcho &&
             toolName !== "ExitPlanMode" &&
-            (toolName === "AskUserQuestion" || requiresClaudeApproval(context))
+            (toolName === "AskUserQuestion" || needsApproval)
           ) {
             // The SDK blocks prompt echoes on permission answers; release held output except for ExitPlanMode.
             yield* releaseHeldRootFrames(context);
@@ -9493,7 +9508,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             } satisfies PermissionResult;
           }
 
-          if (!requiresClaudeApproval(context)) {
+          if (!needsApproval) {
             return {
               behavior: "allow",
               updatedInput: toolInput,
