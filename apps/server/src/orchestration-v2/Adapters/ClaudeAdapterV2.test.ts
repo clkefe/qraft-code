@@ -844,7 +844,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.equal(systemPrompt.preset, "claude_code");
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
     assert.include(systemPrompt.append ?? "", "call `t3_background_wait`");
-    assert.notInclude(systemPrompt.append ?? "", "## T3 Code devices");
+    assert.notInclude(systemPrompt.append ?? "", "## Qraft Code devices");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");
@@ -890,8 +890,8 @@ describe("ClaudeAdapterV2 device instructions", () => {
   });
 
   it("leaves the device block out without device access or without T3 tools", () => {
-    assert.notInclude(append({ mcp: true, deviceToolsAvailable: false }), "## T3 Code devices");
-    assert.notInclude(append({ mcp: false, deviceToolsAvailable: true }), "## T3 Code devices");
+    assert.notInclude(append({ mcp: true, deviceToolsAvailable: false }), "## Qraft Code devices");
+    assert.notInclude(append({ mcp: false, deviceToolsAvailable: true }), "## Qraft Code devices");
   });
 
   it("gives native subagents the device block only in a session with device access", async () => {
@@ -5672,6 +5672,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   describe("Full access asks", () => {
     const requestFullAccessCommand = Effect.fn("requestFullAccessCommand")(function* (options: {
       confirmedBypass: boolean;
+      decisionReason?: string;
       matchedAskRule?: { source: "userSettings"; toolName: string; ruleContent: string };
     }) {
       const harness = yield* makeWakeHarness;
@@ -5703,7 +5704,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           signal: new AbortController().signal,
           toolUseID: "tool-full-access-rm",
           requestId: "request-full-access-rm",
-          decisionReason: "Dangerous rm operation on possibly-empty variable path",
+          decisionReason:
+            options.decisionReason ?? "Dangerous rm operation on possibly-empty variable path",
           ...(options.matchedAskRule === undefined
             ? {}
             : { matchedAskRule: options.matchedAskRule }),
@@ -5729,18 +5731,30 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       }).pipe(
         Effect.scoped,
         Effect.provide(
-          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
     );
 
     it.effect.each([
       { name: "the user's ask rule matched", confirmedBypass: true, askRule: true },
-      { name: "the CLI has not confirmed bypass", confirmedBypass: false, askRule: false },
-    ])("still asks when $name", ({ confirmedBypass, askRule }) =>
+      // Before the CLI confirms bypass, upstream declines rm safety checks outright.
+      {
+        name: "the CLI has not confirmed bypass",
+        confirmedBypass: false,
+        askRule: false,
+        decisionReason: "This command requires approval",
+      },
+    ])("still asks when $name", ({ confirmedBypass, askRule, decisionReason }) =>
       Effect.gen(function* () {
         const { harness, first, decision } = yield* requestFullAccessCommand({
           confirmedBypass,
+          ...(decisionReason === undefined ? {} : { decisionReason }),
           ...(askRule
             ? {
                 matchedAskRule: {
@@ -5762,7 +5776,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       }).pipe(
         Effect.scoped,
         Effect.provide(
-          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
     );

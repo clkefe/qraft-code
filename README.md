@@ -5,7 +5,6 @@ Fork build and upstream-update instructions: [Qraft Code operations](docs/operat
 
 The original upstream overview follows.
 
-
 <p align="center">
   <a href="https://t3.codes">
     <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="T3 Code logo" />

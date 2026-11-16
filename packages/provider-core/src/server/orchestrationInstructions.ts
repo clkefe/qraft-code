@@ -38,7 +38,7 @@ When browser work was asked, \`preview_*\` is the browser you share with the use
 
 const T3_CODE_DEVICE_TOOLS = ["device_list", "device_open", "device_screenshot", "device_close"];
 
-const deviceToolInstructions = (loadTools: string) => `## T3 Code devices
+const deviceToolInstructions = (loadTools: string) => `## Qraft Code devices
 
 When a task needs an iOS Simulator or Android Emulator, on this machine or on an SSH device host such as a remote Mac, use the device tools so the user can watch it in the Device panel.${loadTools}
 1. Call \`device_list\` unless you already have the device's \`hostId\` and \`id\`.
