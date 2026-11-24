@@ -29,6 +29,7 @@ import {
   absoluteFilePathMatches,
   isWindowsDrivePathHref,
   normalizeMarkdownLinkDestination,
+  spacedPathLinkMatches,
 } from "./markdownLinks.ts";
 import { isWindowsAbsolutePath } from "./path.ts";
 import { THREAD_LINK_PROTOCOL } from "./threadLinks.ts";
@@ -248,6 +249,7 @@ export const CHAT_MARKDOWN_REMARK_PLUGINS: PluggableList = [
   remarkGfm,
   remarkEndAutolinksAtScriptPunctuation,
   remarkKeepAutolinkSuffixes,
+  remarkLinkSpacedPathDestinations,
   remarkLinkAbsoluteFilePaths,
   remarkKeepWindowsPaths,
   remarkGithubAlerts,
@@ -263,6 +265,7 @@ export const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS: PluggableList = [
   remarkGfm,
   remarkEndAutolinksAtScriptPunctuation,
   remarkKeepAutolinkSuffixes,
+  remarkLinkSpacedPathDestinations,
   remarkLinkAbsoluteFilePaths,
   remarkKeepWindowsPaths,
   remarkGithubAlerts,
@@ -661,6 +664,36 @@ function remarkEndAutolinksAtScriptPunctuation(this: Processor): Transformer<Roo
       }
     };
     tree.children.forEach(visit);
+  };
+}
+
+function remarkLinkSpacedPathDestinations(): Transformer<Root> {
+  return (tree) => {
+    const visit = (node: Root | RootContent) => {
+      if (!("children" in node) || node.type === "link" || node.type === "linkReference") return;
+      node.children = node.children.flatMap((child): typeof node.children => {
+        if (child.type !== "text") {
+          visit(child);
+          return [child];
+        }
+        const parts: PhrasingContent[] = [];
+        let offset = 0;
+        for (const { index, length, image, label, url } of spacedPathLinkMatches(child.value)) {
+          if (index > offset) parts.push({ type: "text", value: child.value.slice(offset, index) });
+          parts.push(
+            image
+              ? { type: "image", url, alt: label }
+              : { type: "link", url, children: [{ type: "text", value: label }] },
+          );
+          offset = index + length;
+        }
+        if (offset === 0) return [child];
+        if (offset < child.value.length)
+          parts.push({ type: "text", value: child.value.slice(offset) });
+        return parts;
+      });
+    };
+    visit(tree);
   };
 }
 

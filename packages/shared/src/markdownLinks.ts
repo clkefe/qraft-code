@@ -490,6 +490,22 @@ export function isWindowsDrivePathHref(href: string): boolean {
 
 // Bare prose paths need a filesystem root or a position, so `/api/users.json` stays a route,
 // and a file-shaped last segment.
+// CommonMark ends a bare destination at whitespace, so `![a](/My Files/a.png)` parses as text.
+const SPACED_PATH_LINK =
+  /(!?)\[([^[\]\n]*)\]\(((?:\/|~\/|[A-Za-z]:[\\/])[^()<>"\n]*?\s[^()<>"\n]*?[^\s()<>"\\])\)/g;
+
+/** Links and images in parsed text whose absolute path destination holds a space. */
+export function spacedPathLinkMatches(text: string) {
+  if (!text.includes("](")) return [];
+  return Array.from(text.matchAll(SPACED_PATH_LINK), (match) => ({
+    index: match.index,
+    length: match[0].length,
+    image: match[1] === "!",
+    label: match[2]!,
+    url: match[3]!,
+  }));
+}
+
 export function absoluteFilePathMatches(text: string): Array<{ index: number; path: string }> {
   const paths: Array<{ index: number; path: string }> = [];
   for (const match of text.matchAll(/(^|[\s(["'])(\/[^\s<>"'`]+)/g)) {

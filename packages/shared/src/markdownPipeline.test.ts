@@ -712,3 +712,24 @@ it("links complete absolute paths in prose and skips shortened ones", () => {
   expect(links(`[notes](${path}) and \`${path}\``)).toEqual([path]);
   expect(links(`\`\`\`\n${path}\n\`\`\``)).toEqual([]);
 });
+
+it("reads absolute path destinations that hold a space as links and images", () => {
+  const video = "/Users/me/Desktop/My Files/exports/demo clip.mp4";
+  const processor = unified().use(remarkParse).use(CHAT_MARKDOWN_REMARK_PLUGINS);
+  const targets = (markdown: string) => {
+    const found: string[] = [];
+    const visit = (node: Root | RootContent) => {
+      if (node.type === "link" || node.type === "image") found.push(`${node.type} ${node.url}`);
+      if ("children" in node) node.children.forEach(visit);
+    };
+    visit(processor.runSync(processor.parse(markdown), markdown) as Root);
+    return found;
+  };
+  expect(
+    targets(`![Demo](${video})\n\n[demo clip.mp4](${video}) and [a](~/My Docs/a.md).`),
+  ).toEqual([`image ${video}`, `link ${video}`, "link ~/My Docs/a.md"]);
+  expect(
+    targets(`[a](${video} "title") \`![a](${video})\`\n\n\`\`\`\n![a](${video})\n\`\`\``),
+  ).toEqual([]);
+  expect(targets("Call [f](x y) with [g](./a b.md)")).toEqual([]);
+});

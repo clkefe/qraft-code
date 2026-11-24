@@ -3,7 +3,11 @@ import { unified, type Processor } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import { remarkKeepWindowsProsePaths } from "@t3tools/shared/markdownWindowsPaths";
-import { absoluteFilePathMatches, parseMarkdownFileLink } from "@t3tools/shared/markdownLinks";
+import {
+  absoluteFilePathMatches,
+  parseMarkdownFileLink,
+  spacedPathLinkMatches,
+} from "@t3tools/shared/markdownLinks";
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkKeepWindowsProsePaths);
@@ -487,9 +491,31 @@ function markdownWithWindowsPathDestinations(markdown: string): string {
   return applyMarkdownEdits(markdown, edits);
 }
 
+/** Wraps absolute path destinations that hold a space in `<>`, so they parse as links. */
+function markdownWithSpacedPathDestinations(markdown: string): string {
+  if (!markdown.includes("](")) return markdown;
+  const edits: MarkdownEdit[] = [];
+  const visit = (node: MarkdownNode) => {
+    if (node.type === "text") {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start === undefined || end === undefined) return;
+      for (const { index, length, url } of spacedPathLinkMatches(markdown.slice(start, end))) {
+        const urlStart = start + index + length - 1 - url.length;
+        edits.push({ start: urlStart, end: urlStart + url.length, content: `<${url}>` });
+      }
+    } else if (node.type !== "link" && node.type !== "linkReference" && "children" in node)
+      node.children.forEach(visit);
+  };
+  visit(parser.parse(markdown));
+  return applyMarkdownEdits(markdown, edits);
+}
+
 // HTML wrappers can expose Markdown that wasn't in the first AST, so normalize them first.
 export function markdownForNativeParsing(markdown: string): string {
-  return markdownWithWindowsPathDestinations(markdownWithHtml(markdown));
+  return markdownWithWindowsPathDestinations(
+    markdownWithSpacedPathDestinations(markdownWithHtml(markdown)),
+  );
 }
 
 export function parseMarkdownDocument(markdown: string): Root {

@@ -30,6 +30,16 @@ describe("absolute paths in prose", () => {
     for (const decoded of [String.raw`See /tmp/a\_b.md.`, "See /tmp/a&copy;.md."])
       expect(rewrite(decoded)).toBe(decoded);
   });
+
+  it("keep a destination with a space as a link", () => {
+    const video = "/Users/me/My Files/demo clip.mp4";
+    expect(
+      markdownForNativeRendering(
+        `![Demo](${video}) and \`[a](${video})\``,
+        ENRICHED_INLINE_FILE_LINK_REGEX,
+      ),
+    ).toBe(`![Demo](<${video}>) and \`[a](${video})\``);
+  });
 });
 
 describe("inline code that names a file", () => {
