@@ -29,7 +29,8 @@ import {
   absoluteFilePathMatches,
   isWindowsDrivePathHref,
   normalizeMarkdownLinkDestination,
-  spacedPathLinkMatches,
+  authoredPathDestinations,
+  spacedPathLinks,
 } from "./markdownLinks.ts";
 import { isWindowsAbsolutePath } from "./path.ts";
 import { THREAD_LINK_PROTOCOL } from "./threadLinks.ts";
@@ -667,31 +668,69 @@ function remarkEndAutolinksAtScriptPunctuation(this: Processor): Transformer<Roo
   };
 }
 
+function plainText(nodes: ReadonlyArray<PhrasingContent>): string {
+  return nodes
+    .map((node) =>
+      "value" in node ? node.value : "children" in node ? plainText(node.children) : "",
+    )
+    .join("");
+}
+
+// Parsing drops the escapes a Windows path's backslashes form, so read it as authored.
+function authoredUrl(close: Text, ordinal: number, url: string, source: string): string {
+  const start = close.position?.start.offset;
+  const end = close.position?.end.offset;
+  if (start === undefined || end === undefined) return url;
+  const authored = authoredPathDestinations(source.slice(start, end))[ordinal]?.url;
+  const unescaped = (path: string) => path.replaceAll("\\", "");
+  return authored !== undefined && unescaped(authored) === unescaped(url) ? authored : url;
+}
+
 function remarkLinkSpacedPathDestinations(): Transformer<Root> {
-  return (tree) => {
+  return (tree, file) => {
+    const source = String(file.value ?? "");
     const visit = (node: Root | RootContent) => {
       if (!("children" in node) || node.type === "link" || node.type === "linkReference") return;
-      node.children = node.children.flatMap((child): typeof node.children => {
-        if (child.type !== "text") {
-          visit(child);
-          return [child];
-        }
-        const parts: PhrasingContent[] = [];
-        let offset = 0;
-        for (const { index, length, image, label, url } of spacedPathLinkMatches(child.value)) {
-          if (index > offset) parts.push({ type: "text", value: child.value.slice(offset, index) });
-          parts.push(
-            image
-              ? { type: "image", url, alt: label }
-              : { type: "link", url, children: [{ type: "text", value: label }] },
-          );
-          offset = index + length;
-        }
-        if (offset === 0) return [child];
-        if (offset < child.value.length)
-          parts.push({ type: "text", value: child.value.slice(offset) });
-        return parts;
-      });
+      node.children.forEach(visit);
+      const children = node.children as PhrasingContent[];
+      const links = spacedPathLinks(children);
+      for (let index = links.length - 1; index >= 0; index -= 1) {
+        const link = links[index]!;
+        const open = children[link.openNode] as Text;
+        const close = children[link.closeNode] as Text;
+        const labelStart = link.openOffset + (link.image ? 2 : 1);
+        const label: PhrasingContent[] =
+          link.openNode === link.closeNode
+            ? [{ type: "text", value: open.value.slice(labelStart, link.labelEnd) }]
+            : [
+                { type: "text", value: open.value.slice(labelStart) },
+                ...children.slice(link.openNode + 1, link.closeNode),
+                { type: "text", value: close.value.slice(0, link.labelEnd) },
+              ];
+        const ordinal = links
+          .slice(0, index)
+          .filter(({ closeNode }) => closeNode === link.closeNode).length;
+        const url = isWindowsAbsolutePath(link.url)
+          ? authoredUrl(close, ordinal, link.url, source)
+          : link.url;
+        const replacement: PhrasingContent[] = [
+          // Keeps the position, so an earlier link closing in this node still finds its source.
+          { type: "text", value: open.value.slice(0, link.openOffset), position: open.position },
+          link.image
+            ? { type: "image", url, alt: plainText(label) }
+            : {
+                type: "link",
+                url,
+                children: label.filter((child) => child.type !== "text" || child.value),
+              },
+          { type: "text", value: close.value.slice(link.closeOffset) },
+        ];
+        children.splice(
+          link.openNode,
+          link.closeNode - link.openNode + 1,
+          ...replacement.filter((child) => child.type !== "text" || child.value),
+        );
+      }
     };
     visit(tree);
   };

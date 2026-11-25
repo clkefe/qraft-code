@@ -6,7 +6,8 @@ import { remarkKeepWindowsProsePaths } from "@t3tools/shared/markdownWindowsPath
 import {
   absoluteFilePathMatches,
   parseMarkdownFileLink,
-  spacedPathLinkMatches,
+  authoredPathDestinations,
+  spacedPathLinks,
 } from "@t3tools/shared/markdownLinks";
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 
@@ -496,16 +497,29 @@ function markdownWithSpacedPathDestinations(markdown: string): string {
   if (!markdown.includes("](")) return markdown;
   const edits: MarkdownEdit[] = [];
   const visit = (node: MarkdownNode) => {
-    if (node.type === "text") {
-      const start = node.position?.start.offset;
-      const end = node.position?.end.offset;
-      if (start === undefined || end === undefined) return;
-      for (const { index, length, url } of spacedPathLinkMatches(markdown.slice(start, end))) {
-        const urlStart = start + index + length - 1 - url.length;
-        edits.push({ start: urlStart, end: urlStart + url.length, content: `<${url}>` });
+    if (!("children" in node) || node.type === "link" || node.type === "linkReference") return;
+    const children: readonly MarkdownNode[] = node.children;
+    const closeNodes = spacedPathLinks(children).map((link) => link.closeNode);
+    for (const [index, child] of children.entries()) {
+      const count = closeNodes.filter((closeNode) => closeNode === index).length;
+      const start = child.position?.start.offset;
+      const end = child.position?.end.offset;
+      if (count === 0 || start === undefined || end === undefined) {
+        visit(child);
+        continue;
       }
-    } else if (node.type !== "link" && node.type !== "linkReference" && "children" in node)
-      node.children.forEach(visit);
+      for (const destination of authoredPathDestinations(markdown.slice(start, end)).slice(
+        0,
+        count,
+      )) {
+        const urlStart = start + destination.start;
+        edits.push({
+          start: urlStart,
+          end: urlStart + destination.url.length,
+          content: `<${destination.url}>`,
+        });
+      }
+    }
   };
   visit(parser.parse(markdown));
   return applyMarkdownEdits(markdown, edits);

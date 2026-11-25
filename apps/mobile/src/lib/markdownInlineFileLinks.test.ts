@@ -39,6 +39,12 @@ describe("absolute paths in prose", () => {
         ENRICHED_INLINE_FILE_LINK_REGEX,
       ),
     ).toBe(`![Demo](<${video}>) and \`[a](${video})\``);
+    expect(
+      markdownForNativeRendering(
+        "[`a.ts`](/My A/a.ts) [b](/My B/b (1).md)",
+        ENRICHED_INLINE_FILE_LINK_REGEX,
+      ),
+    ).toBe("[`a.ts`](</My A/a.ts>) [b](</My B/b (1).md>)");
   });
 });
 

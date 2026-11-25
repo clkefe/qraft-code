@@ -731,5 +731,16 @@ it("reads absolute path destinations that hold a space as links and images", () 
   expect(
     targets(`[a](${video} "title") \`![a](${video})\`\n\n\`\`\`\n![a](${video})\n\`\`\``),
   ).toEqual([]);
+  expect(
+    targets(
+      String.raw`[\`a.ts\`](/My Repo/a.ts:12) and **[b](/My B/shot (1).png)**, [c](file:///My C/c.md) [d](C:\My D\.t3\d.md) [e](C:\My E\.t3\e.md)`,
+    ),
+  ).toEqual([
+    "link /My Repo/a.ts:12",
+    "link /My B/shot (1).png",
+    "link file:///My C/c.md",
+    "link file:///C:/My D/.t3/d.md",
+    "link file:///C:/My E/.t3/e.md",
+  ]);
   expect(targets("Call [f](x y) with [g](./a b.md)")).toEqual([]);
 });
